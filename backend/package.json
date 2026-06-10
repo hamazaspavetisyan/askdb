@@ -18,6 +18,9 @@
         "test:cov": "jest --coverage",
         "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
         "test:e2e": "jest --config ./test/jest-e2e.json",
+        "start:mcp": "node dist/mcp-main.js",
+        "start:mcp:dev": "ts-node src/mcp-main.ts",
+        "start:mcp:stdio": "node dist/mcp-stdio-main.js",
         "llm:smoke": "ts-node scripts/llm-smoke.ts",
         "good": "npm run format && npm run lint && npm run build && npm run test",
         "migrate-mongo-up": "cd migration; migrate-mongo up; cd ..;"
@@ -27,6 +30,7 @@
         "@aws-sdk/client-rekognition": "^3.911.0",
         "@aws-sdk/client-s3": "^3.787.0",
         "@aws-sdk/client-sts": "^3.787.0",
+        "@modelcontextprotocol/sdk": "^1.29.0",
         "@mongo-mpc/shared": "file:../shared",
         "@nestjs/common": "^11.0.0",
         "@nestjs/config": "^4.0.2",
@@ -56,7 +60,8 @@
         "tunnel-ssh": "^5.2.0",
         "uuid": "^11.1.0",
         "winston": "^3.19.0",
-        "winston-daily-rotate-file": "^5.0.0"
+        "winston-daily-rotate-file": "^5.0.0",
+        "zod": "^4.4.3"
     },
     "devDependencies": {
         "@eslint/eslintrc": "^3.3.4",
