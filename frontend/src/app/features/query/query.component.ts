@@ -54,7 +54,7 @@ const DATABASE_KEY = 'mongo-mpc.database';
                     @if (res.explanation) {
                         <p class="explain">{{ res.explanation }}</p>
                     }
-                    <details open>
+                    <details>
                         <summary>
                             Generated query
                             <span class="pill">{{ res.executionTimeMs }} ms</span>
