@@ -1,5 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+    HttpStatus,
+    Injectable,
+    Logger,
+    OnModuleInit
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { FriendlyException, ErrorKeys } from '../../common/errors';
 import { LlmProvider } from './llm/llm-provider.interface';
 import { LlmRequest, LlmResponse } from './llm/llm.types';
 import { AnthropicProvider } from './llm/anthropic.provider';
@@ -28,8 +34,23 @@ export class LlmService implements OnModuleInit {
         this.logger.log(`LLM provider: ${this.provider.name}`);
     }
 
-    chat(req: LlmRequest): Promise<LlmResponse> {
-        return this.provider.chat(req);
+    async chat(req: LlmRequest): Promise<LlmResponse> {
+        try {
+            return await this.provider.chat(req);
+        } catch (err) {
+            // Surface upstream LLM failures (auth, rate limit, network, 5xx)
+            // as a clean, consistent error instead of leaking SDK internals.
+            const message = (err as Error)?.message ?? 'unknown error';
+            this.logger.error(
+                `LLM provider "${this.provider.name}" request failed: ${message}`
+            );
+            throw new FriendlyException(
+                `The AI provider (${this.provider.name}) request failed: ${message}`,
+                'llm',
+                ErrorKeys.LLM_REQUEST_FAILED,
+                HttpStatus.BAD_GATEWAY
+            );
+        }
     }
 
     private createProvider(): LlmProvider {

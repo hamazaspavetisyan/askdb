@@ -58,6 +58,14 @@ supply that provider's key:
 Adding another provider is one class implementing `LlmProvider` plus a case in
 `LlmService` — the agent loop and the read-only safeguards don't change.
 
+To verify a provider end to end with a real API call (a tiny tool-calling
+round-trip), from `backend/`:
+
+```bash
+LLM_PROVIDER=openai OPENAI_API_KEY=sk-... npm run llm:smoke
+# or: LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-... npm run llm:smoke
+```
+
 ## Running
 
 Open two terminal tabs from the repo root.
