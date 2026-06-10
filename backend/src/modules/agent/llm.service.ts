@@ -1,48 +1,70 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Anthropic from '@anthropic-ai/sdk';
+import { LlmProvider } from './llm/llm-provider.interface';
+import { LlmRequest, LlmResponse } from './llm/llm.types';
+import { AnthropicProvider } from './llm/anthropic.provider';
+import { OpenAiProvider } from './llm/openai.provider';
 
-/** Default model; override with ANTHROPIC_MODEL. */
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
-const DEFAULT_MAX_TOKENS = 2048;
-
-export interface LlmCallParams {
-    system: string;
-    tools: Anthropic.Tool[];
-    messages: Anthropic.MessageParam[];
-}
+/** Default model per provider; override with <PROVIDER>_MODEL. */
+const DEFAULT_MODELS: Record<string, string> = {
+    anthropic: 'claude-sonnet-4-6',
+    openai: 'gpt-4o'
+};
 
 /**
- * Thin wrapper around the Anthropic SDK so the agent depends on a small,
- * mockable surface rather than the client directly.
+ * Provider-agnostic entry point for the agent. Selects a concrete
+ * {@link LlmProvider} from `LLM_PROVIDER` (default "anthropic") and forwards
+ * neutral chat requests to it. Adding a provider is a new class + a case here.
  */
 @Injectable()
 export class LlmService implements OnModuleInit {
-    private client!: Anthropic;
-    private model = DEFAULT_MODEL;
+    private readonly logger = new Logger('LlmService');
+    private provider!: LlmProvider;
 
     constructor(private readonly config: ConfigService) {}
 
     onModuleInit(): void {
-        const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
-        if (!apiKey) {
-            // Surface a clear error at boot rather than a cryptic 401 later.
-            throw new Error(
-                'ANTHROPIC_API_KEY is not set. Add it to your .env file.'
-            );
-        }
-        this.client = new Anthropic({ apiKey });
-        this.model =
-            this.config.get<string>('ANTHROPIC_MODEL') || DEFAULT_MODEL;
+        this.provider = this.createProvider();
+        this.logger.log(`LLM provider: ${this.provider.name}`);
     }
 
-    createMessage(params: LlmCallParams): Promise<Anthropic.Message> {
-        return this.client.messages.create({
-            model: this.model,
-            max_tokens: DEFAULT_MAX_TOKENS,
-            system: params.system,
-            tools: params.tools,
-            messages: params.messages
-        });
+    chat(req: LlmRequest): Promise<LlmResponse> {
+        return this.provider.chat(req);
+    }
+
+    private createProvider(): LlmProvider {
+        const name = (
+            this.config.get<string>('LLM_PROVIDER') || 'anthropic'
+        ).toLowerCase();
+
+        switch (name) {
+            case 'anthropic':
+                return new AnthropicProvider({
+                    apiKey: this.requireKey('ANTHROPIC_API_KEY'),
+                    model:
+                        this.config.get<string>('ANTHROPIC_MODEL') ||
+                        DEFAULT_MODELS.anthropic
+                });
+            case 'openai':
+                return new OpenAiProvider({
+                    apiKey: this.requireKey('OPENAI_API_KEY'),
+                    model:
+                        this.config.get<string>('OPENAI_MODEL') ||
+                        DEFAULT_MODELS.openai
+                });
+            default:
+                throw new Error(
+                    `Unknown LLM_PROVIDER "${name}". Supported: anthropic, openai.`
+                );
+        }
+    }
+
+    private requireKey(envVar: string): string {
+        const key = this.config.get<string>(envVar);
+        if (!key) {
+            // Surface a clear error at boot rather than a cryptic 401 later.
+            throw new Error(`${envVar} is not set. Add it to your .env file.`);
+        }
+        return key;
     }
 }

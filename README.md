@@ -1,6 +1,6 @@
 # friendly-db-client
 
-A natural language database explorer. Connect to MongoDB, MySQL, or PostgreSQL and query your data in plain English — no query language required. Powered by Claude AI.
+A natural language database explorer. Connect to MongoDB, MySQL, or PostgreSQL and query your data in plain English — no query language required. Powered by your choice of LLM (Anthropic Claude or OpenAI).
 
 ## Project structure
 
@@ -39,10 +39,24 @@ cd backend && cp .env.example .env
 Open `backend/.env` and set your API key:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
 LISTENING_PORT=3000
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
 # ANTHROPIC_MODEL=claude-sonnet-4-6   # optional
 ```
+
+### Choosing an LLM provider
+
+The query agent is provider-agnostic. Pick the backend with `LLM_PROVIDER` and
+supply that provider's key:
+
+| `LLM_PROVIDER` | Required | Optional model override |
+|----------------|----------|-------------------------|
+| `anthropic` (default) | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` (default `claude-sonnet-4-6`) |
+| `openai` | `OPENAI_API_KEY` | `OPENAI_MODEL` (default `gpt-4o`) |
+
+Adding another provider is one class implementing `LlmProvider` plus a case in
+`LlmService` — the agent loop and the read-only safeguards don't change.
 
 ## Running
 

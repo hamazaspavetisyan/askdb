@@ -1,6 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { QueryAgentService } from './query-agent.service';
 import { LlmService } from './llm.service';
+import { LlmResponse } from './llm/llm.types';
 import { DatabaseAdapter } from '../../database/database-adapter.interface';
 import { FriendlyException, ErrorKeys } from '../../common/errors';
 import { HttpStatus } from '@nestjs/common';
@@ -36,39 +36,23 @@ function adapterStub(
     };
 }
 
-/** Build a fake Anthropic.Message. */
-function msg(
-    content: Anthropic.ContentBlock[],
-    stop: Anthropic.Message['stop_reason']
-): Anthropic.Message {
-    return {
-        id: 'm',
-        type: 'message',
-        role: 'assistant',
-        model: 'test',
-        content,
-        stop_reason: stop,
-        stop_sequence: null,
-        usage: { input_tokens: 0, output_tokens: 0 } as any
-    } as Anthropic.Message;
-}
-
-function toolUse(
+/** Neutral LlmResponse builders. */
+function toolTurn(
     name: string,
-    input: unknown,
+    input: Record<string, unknown>,
     id = name
-): Anthropic.ToolUseBlock {
-    return { type: 'tool_use', id, name, input } as Anthropic.ToolUseBlock;
+): LlmResponse {
+    return { text: '', toolCalls: [{ id, name, input }], stop: 'tool_use' };
 }
-function text(t: string): Anthropic.TextBlock {
-    return { type: 'text', text: t } as Anthropic.TextBlock;
+function finalTurn(text: string): LlmResponse {
+    return { text, toolCalls: [], stop: 'end' };
 }
 
-/** LlmService double that replays a scripted sequence of responses. */
-function scriptedLlm(responses: Anthropic.Message[]): LlmService {
+/** LlmService double that replays a scripted sequence of neutral responses. */
+function scriptedLlm(responses: LlmResponse[]): LlmService {
     let i = 0;
     return {
-        createMessage: async () => {
+        chat: async () => {
             if (i >= responses.length)
                 throw new Error('no more scripted responses');
             return responses[i++];
@@ -79,13 +63,10 @@ function scriptedLlm(responses: Anthropic.Message[]): LlmService {
 describe('QueryAgentService', () => {
     it('drives tools then returns query, explanation and rows', async () => {
         const llm = scriptedLlm([
-            msg([toolUse('list_entities', {})], 'tool_use'),
-            msg([toolUse('describe_entity', { entity: 'users' })], 'tool_use'),
-            msg(
-                [toolUse('run_query', { op: 'find', collection: 'users' })],
-                'tool_use'
-            ),
-            msg([text('Found 1 user named Samuel.')], 'end_turn')
+            toolTurn('list_entities', {}),
+            toolTurn('describe_entity', { entity: 'users' }),
+            toolTurn('run_query', { op: 'find', collection: 'users' }),
+            finalTurn('Found 1 user named Samuel.')
         ]);
         const agent = new QueryAgentService(llm, noopLogger);
         const result = await agent.run(adapterStub(), 'shop', 'find Samuel');
@@ -112,15 +93,9 @@ describe('QueryAgentService', () => {
             }
         });
         const llm = scriptedLlm([
-            msg(
-                [toolUse('run_query', { op: 'find', collection: 'user' })],
-                'tool_use'
-            ),
-            msg(
-                [toolUse('run_query', { op: 'find', collection: 'users' })],
-                'tool_use'
-            ),
-            msg([text('Corrected the collection name.')], 'end_turn')
+            toolTurn('run_query', { op: 'find', collection: 'user' }),
+            toolTurn('run_query', { op: 'find', collection: 'users' }),
+            finalTurn('Corrected the collection name.')
         ]);
         const agent = new QueryAgentService(llm, noopLogger);
         const result = await agent.run(adapter, 'shop', 'find Samuel');
@@ -131,7 +106,7 @@ describe('QueryAgentService', () => {
 
     it('errors if the model finishes without ever running a query', async () => {
         const llm = scriptedLlm([
-            msg([text('I am not going to query anything.')], 'end_turn')
+            finalTurn('I am not going to query anything.')
         ]);
         const agent = new QueryAgentService(llm, noopLogger);
         await expect(
@@ -141,7 +116,7 @@ describe('QueryAgentService', () => {
 
     it('stops after the iteration cap when the model never finishes', async () => {
         const loop = Array.from({ length: 20 }, () =>
-            msg([toolUse('list_entities', {})], 'tool_use')
+            toolTurn('list_entities', {})
         );
         const agent = new QueryAgentService(scriptedLlm(loop), noopLogger);
         await expect(
@@ -152,9 +127,9 @@ describe('QueryAgentService', () => {
     it('includes prior session history in the first prompt', async () => {
         const seen: any[] = [];
         const llm = {
-            createMessage: async (params: any) => {
-                seen.push(params);
-                return msg([text('done')], 'end_turn');
+            chat: async (req: any) => {
+                seen.push(req);
+                return finalTurn('done');
             }
         } as unknown as LlmService;
         // No query runs, so this rejects — we only care about the prompt.
@@ -171,7 +146,7 @@ describe('QueryAgentService', () => {
             ])
             .catch(() => undefined);
 
-        const firstUserMsg = String(seen[0].messages[0].content);
+        const firstUserMsg = String(seen[0].messages[0].text);
         expect(firstUserMsg).toContain('Earlier requests in this session');
         expect(firstUserMsg).toContain('get the user named Samuel');
         expect(firstUserMsg).toContain('now include their email');
